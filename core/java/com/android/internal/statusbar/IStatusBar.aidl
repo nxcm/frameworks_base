@@ -16,7 +16,13 @@
 
 package com.android.internal.statusbar;
 
+<<<<<<< HEAD
 import android.os.Bundle;
+=======
+import android.content.Intent;
+
+import com.android.internal.statusbar.StatusBarIcon;
+>>>>>>> b194451... Frameworks: add ability to send a custom intent after keyguard is finished
 import android.service.notification.StatusBarNotification;
 
 import com.android.internal.statusbar.StatusBarIcon;
@@ -46,6 +52,7 @@ oneway interface IStatusBar
     void cancelPreloadRecentApps();
     void showScreenPinningRequest();
     void setAutoRotate(boolean enabled);
+    void showCustomIntentAfterKeyguard(inout Intent intent);
 
     /**
      * Notifies the status bar that an app transition is pending to delay applying some flags with
