@@ -3447,6 +3447,12 @@ public final class Settings {
         };
 
         /**
+         *  Enable navigation bar double tap gesture on to put device to sleep
+         *  @hide
+         */
+        public static final String DOUBLE_TAP_SLEEP_GESTURE_NAVBAR = "double_tap_sleep_gesture_navbar";
+
+        /**
          * Enable blocking wakelock
          * @hide
          */
