@@ -3223,8 +3223,10 @@ public class PhoneWindowManager implements WindowManagerPolicy {
                 // If an incoming call is ringing, HOME is totally disabled.
                 // (The user is already on the InCallUI at this point,
                 // and his ONLY options are to answer or reject the call.)
+                final boolean isCallInHeadsup = isScreenOn() && !keyguardOn();
                 TelecomManager telecomManager = getTelecommService();
-                if (telecomManager != null && telecomManager.isRinging()) {
+                if (telecomManager != null && telecomManager.isRinging()
+                            && !isCallInHeadsup) {
                     Log.i(TAG, "Ignoring HOME; there's a ringing incoming call.");
                     return -1;
                 }
