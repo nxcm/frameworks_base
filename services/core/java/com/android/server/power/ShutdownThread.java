@@ -35,6 +35,7 @@ import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.pm.PackageManager;
 import android.media.AudioManager;
 import android.media.MediaPlayer;
 import android.media.MediaPlayer.OnCompletionListener;
@@ -64,6 +65,8 @@ import android.util.Log;
 import android.view.IWindowManager;
 import android.view.WindowManager;
 import java.lang.reflect.Method;
+
+import cyanogenmod.providers.CMSettings;
 import dalvik.system.PathClassLoader;
 
 import java.io.BufferedReader;
@@ -169,8 +172,8 @@ public final class ShutdownThread extends Thread {
     private static boolean isAdvancedRebootPossible(final Context context) {
         KeyguardManager km = (KeyguardManager) context.getSystemService(Context.KEYGUARD_SERVICE);
         boolean keyguardLocked = km.inKeyguardRestrictedInputMode() && km.isKeyguardSecure();
-        boolean advancedRebootEnabled = Settings.Secure.getInt(context.getContentResolver(),
-            Settings.Secure.ADVANCED_REBOOT, 1) == 1;
+        boolean advancedRebootEnabled = CMSettings.Secure.getInt(context.getContentResolver(),
+                CMSettings.Secure.ADVANCED_REBOOT, 1) == 1;
         boolean isPrimaryUser = UserHandle.getCallingUserId() == UserHandle.USER_OWNER;
 
         return advancedRebootEnabled && !keyguardLocked && isPrimaryUser;
@@ -189,8 +192,8 @@ public final class ShutdownThread extends Thread {
         boolean showRebootOption = false;
 
         String[] actionsArray;
-        String actions = Settings.Secure.getStringForUser(context.getContentResolver(),
-                Settings.Secure.POWER_MENU_ACTIONS, UserHandle.USER_CURRENT);
+        String actions = CMSettings.Secure.getStringForUser(context.getContentResolver(),
+                CMSettings.Secure.POWER_MENU_ACTIONS, UserHandle.USER_CURRENT);
         if (actions == null) {
             actionsArray = context.getResources().getStringArray(
                     com.android.internal.R.array.config_globalActionsList);
@@ -995,7 +998,11 @@ public final class ShutdownThread extends Thread {
         Context uiContext = null;
         if (context != null) {
             uiContext = ThemeUtils.createUiContext(context);
-            uiContext.setTheme(android.R.style.Theme_DeviceDefault_Light_DarkActionBar);
+            if (context.getPackageManager().hasSystemFeature(PackageManager.FEATURE_TELEVISION)) {
+                uiContext.setTheme(com.android.internal.R.style.Theme_Leanback_Dialog_Alert);
+            } else  {
+                uiContext.setTheme(android.R.style.Theme_DeviceDefault_Light_DarkActionBar);
+            }
         }
         return uiContext != null ? uiContext : context;
     }
