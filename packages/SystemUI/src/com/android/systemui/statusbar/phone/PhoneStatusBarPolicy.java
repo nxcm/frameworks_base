@@ -260,7 +260,7 @@ public class PhoneStatusBarPolicy implements Callback {
             b.putString(String.valueOf(mHeadsetIconVisible), s);
             mHeadsetIntent.putExtras(b);
             AudioManager am1 = (AudioManager)mContext.getSystemService(Context.AUDIO_SERVICE);
-            if (am1.isWiredHeadsetOn() || am1.isBluetoothA2dpOn()) {
+            if (am1.isWiredHeadsetOn()) {
                 updateHeadset(mHeadsetIntent);
             }
         }
