@@ -3476,15 +3476,6 @@ public final class Settings {
         public static final String WIFI_AUTO_CONNECT_TYPE = "wifi_auto_connect_type";
 
         /**
-          * Volume keys control cursor in text fields (default is 0)
-          * 0 - Disabled
-          * 1 - Volume up/down moves cursor left/right
-          * 2 - Volume up/down moves cursor right/left
-          * @hide
-          */
-         public static final String VOLUME_KEY_CURSOR_CONTROL = "volume_key_cursor_control";
-
-        /**
          * Whether to enable voice wakeup.  The value is boolean (1 or 0).
          * @hide
          */
@@ -3530,12 +3521,6 @@ public final class Settings {
          * @hide
          */
         public static final String DISABLE_FULLSCREEN_KEYBOARD = "disable_fullscreen_keyboard";
-
-        /**
-         * Whether to show the IME switcher in the status bar
-         * @hide
-         */
-        public static final String STATUS_BAR_IME_SWITCHER = "status_bar_ime_switcher";
 
         /**
          * Automatic keyboard rotation timeout.  0 to disable completely.
