@@ -16,12 +16,9 @@
 
 package com.android.internal.statusbar;
 
-<<<<<<< HEAD
 import android.os.Bundle;
-import android.service.notification.StatusBarNotification;
-=======
 import android.content.Intent;
->>>>>>> b194451... Frameworks: add ability to send a custom intent after keyguard is finished
+import android.service.notification.StatusBarNotification;
 
 import com.android.internal.statusbar.IStatusBar;
 import com.android.internal.statusbar.StatusBarIcon;
