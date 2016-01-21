@@ -83,12 +83,12 @@ public class ProfilesTile extends QSTile<QSTile.State> {
     protected void handleUpdateState(State state, Object arg) {
         state.visible = true;
         if (profilesEnabled()) {
-            state.icon = ResourceIcon.get(R.drawable.ic_qs_profiles_on);
+            state.icon = ResourceIcon.get(R.drawable.ic_qs_system_profiles);
             state.label = mProfileManager.getActiveProfile().getName();
             state.contentDescription = mContext.getString(
                     R.string.accessibility_quick_settings_profiles, state.label);
         } else {
-            state.icon = ResourceIcon.get(R.drawable.ic_qs_profiles_off);
+            state.icon = ResourceIcon.get(R.drawable.ic_qs_system_profiles);
             state.label = mContext.getString(R.string.quick_settings_profiles_off);
             state.contentDescription = mContext.getString(
                     R.string.accessibility_quick_settings_profiles_off);
@@ -195,7 +195,7 @@ public class ProfilesTile extends QSTile<QSTile.State> {
             list.setChoiceMode(AbsListView.CHOICE_MODE_SINGLE);
             list.setOnItemClickListener(this);
 
-            mDetails.setEmptyState(R.drawable.ic_qs_profiles_off,
+            mDetails.setEmptyState(R.drawable.ic_qs_system_profiles,
                     R.string.quick_settings_profiles_off);
 
             return mDetails;
