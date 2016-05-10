@@ -45,6 +45,9 @@ import static android.net.NetworkPolicyManager.FIREWALL_RULE_DENY;
 import static android.net.NetworkPolicyManager.POLICY_ALLOW_BACKGROUND_BATTERY_SAVE;
 import static android.net.NetworkPolicyManager.POLICY_NONE;
 import static android.net.NetworkPolicyManager.POLICY_REJECT_METERED_BACKGROUND;
+import static android.net.NetworkPolicyManager.POLICY_REJECT_ON_DATA;
+import static android.net.NetworkPolicyManager.POLICY_REJECT_ON_WLAN;
+import static android.net.NetworkPolicyManager.POLICY_REJECT_ON_WLAN_BACKGROUND;
 import static android.net.NetworkPolicyManager.RULE_ALLOW_ALL;
 import static android.net.NetworkPolicyManager.RULE_REJECT_ALL;
 import static android.net.NetworkPolicyManager.RULE_REJECT_METERED;
@@ -159,6 +162,7 @@ import com.android.internal.util.IndentingPrintWriter;
 import com.android.server.DeviceIdleController;
 import com.android.server.EventLogTags;
 import com.android.server.LocalServices;
+import com.android.server.NetPluginDelegate;
 import com.google.android.collect.Lists;
 
 import org.xmlpull.v1.XmlPullParser;
@@ -2395,6 +2399,14 @@ public class NetworkPolicyManagerService extends INetworkPolicyManager.Stub {
         if (mFirewallChainStates.get(FIREWALL_CHAIN_STANDBY)
                 && mUidFirewallStandbyRules.get(uid, FIREWALL_RULE_DEFAULT) == FIREWALL_RULE_DENY) {
             uidRules = RULE_REJECT_ALL;
+        }
+
+        try {
+            mNetworkManager.restrictAppOnWlan(uid, (uidPolicy & POLICY_REJECT_ON_WLAN) != 0 ||
+                    (((uidPolicy & POLICY_REJECT_ON_WLAN_BACKGROUND) != 0) && !uidForeground));
+            mNetworkManager.restrictAppOnData(uid, (uidPolicy & POLICY_REJECT_ON_DATA) != 0);
+        } catch (RemoteException e) {
+            // ignored; service lives in system_server
         }
 
         final int oldRules = mUidRules.get(uid);

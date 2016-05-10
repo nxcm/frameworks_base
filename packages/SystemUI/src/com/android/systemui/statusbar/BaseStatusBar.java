@@ -45,6 +45,7 @@ import android.database.ContentObserver;
 import android.graphics.PorterDuff;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.Icon;
+import android.media.session.MediaController;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Build;
@@ -117,6 +118,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
+import cyanogenmod.providers.CMSettings;
+
 import static com.android.keyguard.KeyguardHostView.OnDismissAction;
 
 public abstract class BaseStatusBar extends SystemUI implements
@@ -153,6 +156,8 @@ public abstract class BaseStatusBar extends SystemUI implements
             "com.android.systemui.statusbar.banner_action_cancel";
     private static final String BANNER_ACTION_SETUP =
             "com.android.systemui.statusbar.banner_action_setup";
+
+    protected static final int SYSTEM_UI_VISIBILITY_MASK = 0xffffffff;
 
     private static final Uri SPAM_MESSAGE_URI = new Uri.Builder()
            .scheme(ContentResolver.SCHEME_CONTENT)
@@ -263,8 +268,8 @@ public abstract class BaseStatusBar extends SystemUI implements
     protected final ContentObserver mSettingsObserver = new ContentObserver(mHandler) {
         @Override
         public void onChange(boolean selfChange) {
-            final boolean provisioned = 0 != Settings.Global.getInt(
-                    mContext.getContentResolver(), Settings.Global.DEVICE_PROVISIONED, 0);
+            final boolean provisioned = 0 != CMSettings.Secure.getInt(
+                    mContext.getContentResolver(), CMSettings.Secure.CM_SETUP_WIZARD_COMPLETED, 0);
             if (provisioned != mDeviceProvisioned) {
                 mDeviceProvisioned = provisioned;
                 updateNotifications();
@@ -574,8 +579,8 @@ public abstract class BaseStatusBar extends SystemUI implements
         mPowerManager = (PowerManager) mContext.getSystemService(Context.POWER_SERVICE);
 
         mContext.getContentResolver().registerContentObserver(
-                Settings.Global.getUriFor(Settings.Global.DEVICE_PROVISIONED), true,
-                mSettingsObserver);
+                CMSettings.Secure.getUriFor(CMSettings.Secure.CM_SETUP_WIZARD_COMPLETED), false,
+                mSettingsObserver, UserHandle.USER_ALL);
         mContext.getContentResolver().registerContentObserver(
                 Settings.Global.getUriFor(Settings.Global.ZEN_MODE), false,
                 mSettingsObserver);
@@ -624,7 +629,7 @@ public abstract class BaseStatusBar extends SystemUI implements
 
         mSettingsObserver.onChange(false); // set up
         disable(switches[0], switches[6], false /* animate */);
-        setSystemUiVisibility(switches[1], 0xffffffff);
+        setSystemUiVisibility(switches[1], SYSTEM_UI_VISIBILITY_MASK);
         topAppWindowChanged(switches[2] != 0);
         // StatusBarManagerService has a back up of IME token and it's restored here.
         setImeWindowStatus(binders.get(0), switches[3], switches[4], switches[5] != 0);
@@ -766,6 +771,10 @@ public abstract class BaseStatusBar extends SystemUI implements
 
     @Override
     public String getCurrentMediaNotificationKey() {
+        return null;
+    }
+
+    protected MediaController getCurrentMediaController() {
         return null;
     }
 
@@ -1014,6 +1023,10 @@ public abstract class BaseStatusBar extends SystemUI implements
                 }
 
                 ExpandableNotificationRow row = (ExpandableNotificationRow) v;
+                if (v instanceof MediaExpandableNotificationRow
+                        && !((MediaExpandableNotificationRow) v).inflateGuts()) {
+                    return false;
+                }
                 bindGuts(row);
 
                 // Assume we are a status_bar_notification_row
@@ -1320,8 +1333,19 @@ public abstract class BaseStatusBar extends SystemUI implements
             // create the row view
             LayoutInflater inflater = (LayoutInflater) mContext.getSystemService(
                     Context.LAYOUT_INFLATER_SERVICE);
-            row = (ExpandableNotificationRow) inflater.inflate(R.layout.status_bar_notification_row,
-                    parent, false);
+
+            // cannot use isMediaNotification()
+            if (sbn.getNotification().category != null
+                    && sbn.getNotification().category.equals(Notification.CATEGORY_TRANSPORT)) {
+                row = (MediaExpandableNotificationRow) inflater.inflate(
+                        R.layout.status_bar_notification_row_media, parent, false);
+                ((MediaExpandableNotificationRow)row).setMediaController(
+                        getCurrentMediaController());
+            } else {
+                row = (ExpandableNotificationRow) inflater.inflate(
+                        R.layout.status_bar_notification_row,
+                        parent, false);
+            }
             row.setExpansionLogger(this, entry.notification.getKey());
             row.setGroupManager(mGroupManager);
         }

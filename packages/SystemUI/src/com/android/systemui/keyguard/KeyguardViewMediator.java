@@ -53,6 +53,7 @@ import android.util.EventLog;
 import android.util.Log;
 import android.util.Slog;
 import android.view.IWindowManager;
+import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManagerGlobal;
 import android.view.WindowManagerPolicy;
@@ -351,6 +352,8 @@ public class KeyguardViewMediator extends SystemUI {
     private IKeyguardDrawnCallback mDrawnCallback;
 
     private LockscreenEnabledSettingsObserver mSettingsObserver;
+    private PhoneStatusBar mStatusBar;
+
     public static class LockscreenEnabledSettingsObserver extends UserContentObserver {
 
         private static final String KEY_ENABLED = "lockscreen_enabled";
@@ -1291,6 +1294,26 @@ public class KeyguardViewMediator extends SystemUI {
         mHandler.sendEmptyMessage(DISMISS);
     }
 
+    public void showKeyguard() {
+        // This is to prevent left edge from interfering
+        // with affordances.
+        if (mStatusBar.isAffordanceSwipeInProgress()) {
+            return;
+        }
+        mHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                // Hide status bar window to avoid flicker,
+                // slideNotificationPanelIn will make it visible later.
+                mStatusBar.getStatusBarWindow().setVisibility(View.INVISIBLE);
+                // Get the keyguard into the correct state by calling mStatusBar.showKeyguard()
+                mStatusBar.showKeyguard();
+                // Now have the notification panel slid back into view
+                mStatusBar.slideNotificationPanelIn();
+            }
+        });
+    }
+
     /**
      * Send message to keyguard telling it to reset its state.
      * @see #handleReset
@@ -1865,6 +1888,7 @@ public class KeyguardViewMediator extends SystemUI {
             FingerprintUnlockController fingerprintUnlockController) {
         mStatusBarKeyguardViewManager.registerStatusBar(phoneStatusBar, container,
                 statusBarWindowManager, scrimController, fingerprintUnlockController);
+        mStatusBar = phoneStatusBar;
         return mStatusBarKeyguardViewManager;
     }
 
