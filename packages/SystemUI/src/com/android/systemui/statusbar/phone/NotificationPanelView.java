@@ -1326,9 +1326,7 @@ public class NotificationPanelView extends PanelView implements
 
         mStatusBarState = statusBarState;
         mKeyguardShowing = keyguardShowing;
-        if (oldState != statusBarState && statusBarState == StatusBarState.KEYGUARD) {
-            mCanDismissKeyguard = true;
-        }
+        mCanDismissKeyguard = keyguardShowing;
 
         if (goingToFullShade || (oldState == StatusBarState.KEYGUARD
                 && statusBarState == StatusBarState.SHADE_LOCKED)) {
