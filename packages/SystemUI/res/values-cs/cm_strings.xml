@@ -215,4 +215,12 @@
   <string name="accessibility_dock_battery_level">Baterie doku: <xliff:g id="number">%d</xliff:g>\u0025.</string>
   <!-- Play queue -->
   <string name="play_queue_extention">Zobrazit frontu přehrávání</string>
+  <!-- Path data for portrait battery -->
+  <!-- Path data for landscape battery -->
+  <!-- Path data for circle battery -->
+  <!-- Weather string format in keyguard -->
+  <string name="keyguard_status_view_weather_format"><xliff:g id="temp">%1$s</xliff:g> - <xliff:g id="condition">%2$s</xliff:g></string>
+  <string name="expand_hint">Posunutím dolů rozbalit</string>
+  <string name="swipe_left_hint">Posunutím doleva spustit <xliff:g id="app_name">%1$s</xliff:g></string>
+  <string name="swipe_right_hint">Posunutím doprava zobrazit oznámení</string>
 </resources>

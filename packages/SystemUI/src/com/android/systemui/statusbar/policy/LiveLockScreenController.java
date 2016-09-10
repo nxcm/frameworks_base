@@ -3,6 +3,8 @@ package com.android.systemui.statusbar.policy;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.PowerManager;
@@ -11,7 +13,10 @@ import android.os.ServiceManager;
 import android.util.EventLog;
 
 import android.view.View;
+import com.android.keyguard.KeyguardUpdateMonitor;
 import com.android.systemui.EventLogTags;
+import com.android.systemui.SystemUIApplication;
+import com.android.systemui.keyguard.KeyguardViewMediator;
 import com.android.systemui.statusbar.StatusBarState;
 import com.android.systemui.statusbar.phone.NotificationPanelView;
 import com.android.systemui.statusbar.phone.PhoneStatusBar;
@@ -43,6 +48,9 @@ public class LiveLockScreenController {
 
     private boolean mScreenOnAndInteractive;
 
+    private String mLlsName;
+    private KeyguardViewMediator mKeyguardViewMediator;
+
     public LiveLockScreenController(Context context, PhoneStatusBar bar,
             NotificationPanelView panelView) {
         mContext = context;
@@ -53,6 +61,8 @@ public class LiveLockScreenController {
         mBar = bar;
         mPanelView = panelView;
         mPowerManager = context.getSystemService(PowerManager.class);
+        mKeyguardViewMediator = ((SystemUIApplication)
+                mContext.getApplicationContext()).getComponent(KeyguardViewMediator.class);
         registerListener();
         try {
             LiveLockScreenInfo llsInfo = mLLSM.getCurrentLiveLockScreen();
@@ -102,10 +112,10 @@ public class LiveLockScreenController {
                 }
             }
         } else {
-            if (isShowingLiveLockScreenView()) {
+            if (isShowingLiveLockScreenView() && !mBar.isKeyguardInputRestricted()) {
                 mPanelView.removeView(mLiveLockScreenView);
-                mLlsHasFocus = false;
             }
+            mLlsHasFocus = false;
         }
     }
 
@@ -167,7 +177,6 @@ public class LiveLockScreenController {
                 mHandler.post(new Runnable() {
                     @Override
                     public void run() {
-                        mBar.showKeyguard();
                         mBar.startActivityDismissingKeyguard(intent, false, true, true,
                                 null);
                     }
@@ -196,7 +205,7 @@ public class LiveLockScreenController {
 
         @Override
         public void slideLockscreenIn() {
-            if (mPanelView.mShowingExternalKeyguard) {
+            if (mLlsHasFocus) {
                 mHandler.post(new Runnable() {
                     @Override
                     public void run() {
@@ -238,6 +247,7 @@ public class LiveLockScreenController {
     }
 
     public void onLiveLockScreenFocusChanged(boolean hasFocus) {
+        mKeyguardViewMediator.notifyKeyguardPanelFocusChanged(hasFocus);
         if (mLiveLockScreenView != null) {
             // make sure the LLS knows where the notification panel is
             mLiveLockScreenView.onLockscreenSlideOffsetChanged(hasFocus ? 0f : 1f);
@@ -260,6 +270,24 @@ public class LiveLockScreenController {
         // Ensure we reset visibility when keyguard is dismissed
         mBar.setStatusBarViewVisibility(true);
         mBar.getScrimController().forceHideScrims(false);
+    }
+
+    public boolean getLiveLockScreenHasFocus() {
+        return mLlsHasFocus;
+    }
+
+    public String getLiveLockScreenName() {
+        return mLlsName;
+    }
+
+    private String getLlsNameFromComponentName(ComponentName cn) {
+        if (cn == null) return null;
+
+        PackageManager pm = mContext.getPackageManager();
+        Intent intent = new Intent();
+        intent.setComponent(cn);
+        ResolveInfo ri = pm.resolveService(intent, 0);
+        return ri != null ? ri.serviceInfo.loadLabel(pm).toString() : null;
     }
 
     private Runnable mAddNewLiveLockScreenRunnable = new Runnable() {
@@ -287,6 +315,7 @@ public class LiveLockScreenController {
                 // If mThirdPartyKeyguardViewComponent differs from cn, go ahead and update
                 if (!Objects.equals(mLiveLockScreenComponentName, cn)) {
                     mLiveLockScreenComponentName = cn;
+                    mLlsName = getLlsNameFromComponentName(cn);
                     if (mLiveLockScreenView != null) {
                         mLiveLockScreenView.unregisterKeyguardExternalViewCallback(
                                 mExternalKeyguardViewCallbacks);

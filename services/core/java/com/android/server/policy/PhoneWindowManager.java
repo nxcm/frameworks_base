@@ -22,8 +22,6 @@ import android.app.ActivityManagerInternal.SleepToken;
 import android.app.ActivityManagerNative;
 import android.app.AppOpsManager;
 import android.app.IUiModeManager;
-import android.app.KeyguardManager;
-import android.app.ProgressDialog;
 import android.app.SearchManager;
 import android.app.StatusBarManager;
 import android.app.UiModeManager;
@@ -37,6 +35,7 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.ServiceConnection;
 import android.content.pm.ActivityInfo;
+import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.content.res.CompatibilityInfo;
@@ -137,6 +136,8 @@ import com.android.server.GestureLauncherService;
 import com.android.server.LocalServices;
 import com.android.server.policy.keyguard.KeyguardServiceDelegate;
 import com.android.server.policy.keyguard.KeyguardServiceDelegate.DrawnListener;
+
+import org.cyanogenmod.internal.BootDexoptDialog;
 
 import java.io.File;
 import java.io.FileReader;
@@ -1450,8 +1451,8 @@ public class PhoneWindowManager implements WindowManagerPolicy {
     }
 
     boolean isUserSetupComplete() {
-        return Settings.Secure.getIntForUser(mContext.getContentResolver(),
-                Settings.Secure.USER_SETUP_COMPLETE, 0, UserHandle.USER_CURRENT) != 0;
+        return CMSettings.Secure.getIntForUser(mContext.getContentResolver(),
+                CMSettings.Secure.CM_SETUP_WIZARD_COMPLETED, 0, UserHandle.USER_CURRENT) != 0;
     }
 
     private void handleShortPressOnHome() {
@@ -1774,13 +1775,8 @@ public class PhoneWindowManager implements WindowManagerPolicy {
                                 mNavigationBarLeftInLandscape) {
                             requestTransientBars(mNavigationBar);
                         }
-                        boolean focusedWindowIsExternalKeyguard = false;
-                        if (mFocusedWindow != null) {
-                            focusedWindowIsExternalKeyguard = (mFocusedWindow.getAttrs().type
-                                    & WindowManager.LayoutParams.TYPE_KEYGUARD_PANEL) != 0;
-                        }
                         if (mShowKeyguardOnLeftSwipe && isKeyguardShowingOrOccluded()
-                                && focusedWindowIsExternalKeyguard) {
+                                && mKeyguardDelegate.isKeyguardPanelFocused()) {
                             // Show keyguard
                             mKeyguardDelegate.showKeyguard();
                         }
@@ -2488,6 +2484,12 @@ public class PhoneWindowManager implements WindowManagerPolicy {
             attrs.subtreeSystemUiVisibility |= View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
                     | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION;
         }
+
+        if ((attrs.privateFlags & (WindowManager.LayoutParams.PRIVATE_FLAG_PREVENT_SYSTEM_KEYS |
+                            WindowManager.LayoutParams.PRIVATE_FLAG_PREVENT_POWER_KEY)) != 0) {
+            mContext.enforceCallingOrSelfPermission(android.Manifest.permission.PREVENT_SYSTEM_KEYS,
+                    "No permission to prevent system key");
+        }
     }
 
     void readLidState() {
@@ -2729,6 +2731,11 @@ public class PhoneWindowManager implements WindowManagerPolicy {
     @Override
     public WindowState getWinShowWhenLockedLw() {
         return mWinShowWhenLocked;
+    }
+
+    @Override
+    public WindowState getWinKeyguardPanelLw() {
+        return mKeyguardPanel;
     }
 
     /** {@inheritDoc} */
@@ -3196,6 +3203,12 @@ public class PhoneWindowManager implements WindowManagerPolicy {
         // timeout.
         if (keyCode == KeyEvent.KEYCODE_HOME) {
 
+            if (mTopFullscreenOpaqueWindowState != null &&
+                    (mTopFullscreenOpaqueWindowState.getAttrs().privateFlags
+                            & WindowManager.LayoutParams.PRIVATE_FLAG_PREVENT_SYSTEM_KEYS) != 0
+                    && mScreenOnFully) {
+                return 0;
+            }
             // If we have released the home key, and didn't do anything else
             // while it was pressed, then it is time to go home!
             if (!down) {
@@ -3298,6 +3311,13 @@ public class PhoneWindowManager implements WindowManagerPolicy {
                 return 0;
             }
 
+            if (mTopFullscreenOpaqueWindowState != null &&
+                    (mTopFullscreenOpaqueWindowState.getAttrs().privateFlags
+                            & WindowManager.LayoutParams.PRIVATE_FLAG_PREVENT_SYSTEM_KEYS) != 0
+                    && mScreenOnFully) {
+                return 0;
+            }
+
             if (down) {
                 if (mPressOnMenuBehavior == KEY_ACTION_APP_SWITCH
                         || mLongPressOnMenuBehavior == KEY_ACTION_APP_SWITCH) {
@@ -3363,6 +3383,13 @@ public class PhoneWindowManager implements WindowManagerPolicy {
             }
             return 0;
         } else if (keyCode == KeyEvent.KEYCODE_APP_SWITCH) {
+            if (mTopFullscreenOpaqueWindowState != null &&
+                    (mTopFullscreenOpaqueWindowState.getAttrs().privateFlags
+                            & WindowManager.LayoutParams.PRIVATE_FLAG_PREVENT_SYSTEM_KEYS) != 0
+                    && mScreenOnFully) {
+                return 0;
+            }
+
             if (!keyguardOn) {
                 if (down) {
                     if (mPressOnAppSwitchBehavior == KEY_ACTION_APP_SWITCH
@@ -5075,7 +5102,15 @@ public class PhoneWindowManager implements WindowManagerPolicy {
             if ((attrs.privateFlags & PRIVATE_FLAG_FORCE_STATUS_BAR_VISIBLE_TRANSPARENT) != 0) {
                 mForceStatusBarTransparent = true;
             }
-        }
+        } else if (attrs.type == TYPE_KEYGUARD_PANEL) {
+            if (mKeyguardDelegate.isKeyguardPanelFocused()) {
+                attrs.flags |= WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
+                attrs.flags |= WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM;
+            } else {
+                attrs.flags |= WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
+                attrs.flags &= ~WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM;
+            }
+       }
 
         boolean appWindow = attrs.type >= FIRST_APPLICATION_WINDOW
                 && attrs.type < FIRST_SYSTEM_WINDOW;
@@ -5875,7 +5910,8 @@ public class PhoneWindowManager implements WindowManagerPolicy {
             case KeyEvent.KEYCODE_POWER: {
                 if (mTopFullscreenOpaqueWindowState != null &&
                         (mTopFullscreenOpaqueWindowState.getAttrs().privateFlags
-                        & WindowManager.LayoutParams.PRIVATE_FLAG_PREVENT_POWER_KEY) != 0
+                        & (WindowManager.LayoutParams.PRIVATE_FLAG_PREVENT_SYSTEM_KEYS |
+                            WindowManager.LayoutParams.PRIVATE_FLAG_PREVENT_POWER_KEY)) != 0
                         && mScreenOnFully) {
                     return result;
                 }
@@ -6426,7 +6462,7 @@ public class PhoneWindowManager implements WindowManagerPolicy {
     }
 
     private void wakeUpFromPowerKey(long eventTime) {
-        wakeUp(eventTime, mAllowTheaterModeWakeFromPowerKey, "android.policy:POWER", true);
+        wakeUp(eventTime, mAllowTheaterModeWakeFromPowerKey, "android.policy:POWER");
     }
 
     private boolean wakeUp(long wakeTime, boolean wakeInTheaterMode, String reason) {
@@ -7023,68 +7059,18 @@ public class PhoneWindowManager implements WindowManagerPolicy {
         screenTurnedOn();
     }
 
-    ProgressDialog mBootMsgDialog = null;
+    BootDexoptDialog mBootMsgDialog = null;
 
     /** {@inheritDoc} */
     @Override
-    public void showBootMessage(final CharSequence msg, final boolean always) {
+    public void updateBootProgress(final int stage, final ApplicationInfo optimizedApp,
+            final int currentAppPos, final int totalAppCount) {
         mHandler.post(new Runnable() {
             @Override public void run() {
                 if (mBootMsgDialog == null) {
-                    int theme;
-                    if (mContext.getPackageManager().hasSystemFeature(
-                            PackageManager.FEATURE_WATCH)) {
-                        theme = com.android.internal.R.style.Theme_Micro_Dialog_Alert;
-                    } else if (mContext.getPackageManager().hasSystemFeature(
-                            PackageManager.FEATURE_TELEVISION)) {
-                        theme = com.android.internal.R.style.Theme_Leanback_Dialog_Alert;
-                    } else {
-                        theme = 0;
-                    }
-
-                    mBootMsgDialog = new ProgressDialog(mContext, theme) {
-                        // This dialog will consume all events coming in to
-                        // it, to avoid it trying to do things too early in boot.
-                        @Override public boolean dispatchKeyEvent(KeyEvent event) {
-                            return true;
-                        }
-                        @Override public boolean dispatchKeyShortcutEvent(KeyEvent event) {
-                            return true;
-                        }
-                        @Override public boolean dispatchTouchEvent(MotionEvent ev) {
-                            return true;
-                        }
-                        @Override public boolean dispatchTrackballEvent(MotionEvent ev) {
-                            return true;
-                        }
-                        @Override public boolean dispatchGenericMotionEvent(MotionEvent ev) {
-                            return true;
-                        }
-                        @Override public boolean dispatchPopulateAccessibilityEvent(
-                                AccessibilityEvent event) {
-                            return true;
-                        }
-                    };
-                    if (mContext.getPackageManager().isUpgrade()) {
-                        mBootMsgDialog.setTitle(R.string.android_upgrading_title);
-                    } else {
-                        mBootMsgDialog.setTitle(R.string.android_start_title);
-                    }
-                    mBootMsgDialog.setProgressStyle(ProgressDialog.STYLE_SPINNER);
-                    mBootMsgDialog.setIndeterminate(true);
-                    mBootMsgDialog.getWindow().setType(
-                            WindowManager.LayoutParams.TYPE_BOOT_PROGRESS);
-                    mBootMsgDialog.getWindow().addFlags(
-                            WindowManager.LayoutParams.FLAG_DIM_BEHIND
-                            | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN);
-                    mBootMsgDialog.getWindow().setDimAmount(1);
-                    WindowManager.LayoutParams lp = mBootMsgDialog.getWindow().getAttributes();
-                    lp.screenOrientation = ActivityInfo.SCREEN_ORIENTATION_NOSENSOR;
-                    mBootMsgDialog.getWindow().setAttributes(lp);
-                    mBootMsgDialog.setCancelable(false);
-                    mBootMsgDialog.show();
+                    mBootMsgDialog = BootDexoptDialog.create(mContext);
                 }
-                mBootMsgDialog.setMessage(msg);
+                mBootMsgDialog.setProgress(stage, optimizedApp, currentAppPos, totalAppCount);
             }
         });
     }

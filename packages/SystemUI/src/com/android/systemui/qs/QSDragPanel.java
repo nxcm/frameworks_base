@@ -57,6 +57,7 @@ import com.android.systemui.qs.tiles.CustomQSTile;
 import com.android.systemui.qs.tiles.EditTile;
 import com.android.systemui.settings.BrightnessController;
 import com.android.systemui.settings.ToggleSlider;
+import com.android.systemui.statusbar.phone.NotificationPanelView;
 import com.android.systemui.statusbar.phone.QSTileHost;
 import com.android.systemui.statusbar.policy.BrightnessMirrorController;
 import com.android.systemui.tuner.QsTuner;
@@ -64,17 +65,17 @@ import com.viewpagerindicator.CirclePageIndicator;
 import cyanogenmod.app.StatusBarPanelCustomTile;
 import cyanogenmod.providers.CMSettings;
 import org.cyanogenmod.internal.logging.CMMetricsLogger;
-import org.cyanogenmod.internal.util.QSConstants;
 import org.cyanogenmod.internal.util.QSUtils;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.ListIterator;
 import java.util.Map;
+
+import static android.content.res.Configuration.ORIENTATION_LANDSCAPE;
 
 public class QSDragPanel extends QSPanel implements View.OnDragListener, View.OnLongClickListener {
 
@@ -90,6 +91,7 @@ public class QSDragPanel extends QSPanel implements View.OnDragListener, View.On
 
     protected final ArrayList<QSPage> mPages = new ArrayList<>();
 
+    private NotificationPanelView mPanelView;
     protected QSViewPager mViewPager;
     protected PagerAdapter mPagerAdapter;
     QSPanelTopView mQsPanelTop;
@@ -98,6 +100,7 @@ public class QSDragPanel extends QSPanel implements View.OnDragListener, View.On
 
     private TextView mDetailRemoveButton;
     private DragTileRecord mDraggingRecord, mLastDragRecord;
+    private ViewGroup mDetailButtons;
     private boolean mEditing;
     private boolean mDragging;
     private float mLastTouchLocationX, mLastTouchLocationY;
@@ -115,15 +118,13 @@ public class QSDragPanel extends QSPanel implements View.OnDragListener, View.On
     List<TileRecord> mCurrentlyAnimating
             = Collections.synchronizedList(new ArrayList<TileRecord>());
 
-    private Point mDisplaySize;
-    private int[] mTmpLoc;
-
     private Runnable mResetPage = new Runnable() {
         @Override
         public void run() {
-            if (!mListening) {
+            if (!mExpanded) {
                 // only reset when the user isn't interacting at all
                 mViewPager.setCurrentItem(0);
+                mPagerAdapter.notifyDataSetChanged();
             }
         }
     };
@@ -141,6 +142,7 @@ public class QSDragPanel extends QSPanel implements View.OnDragListener, View.On
         updateResources();
 
         mDetail = LayoutInflater.from(mContext).inflate(R.layout.qs_detail, this, false);
+        mDetailButtons = (ViewGroup) mDetail.findViewById(R.id.buttons);
         mDetailContent = (ViewGroup) mDetail.findViewById(android.R.id.content);
         mDetailRemoveButton = (TextView) mDetail.findViewById(android.R.id.button3);
         mDetailSettingsButton = (TextView) mDetail.findViewById(android.R.id.button2);
@@ -385,12 +387,6 @@ public class QSDragPanel extends QSPanel implements View.OnDragListener, View.On
     public void setListening(boolean listening) {
         if (mListening == listening) return;
         mListening = listening;
-        // reset the page when inactive for a while
-        if (listening) {
-            removeCallbacks(mResetPage);
-        } else {
-            postDelayed(mResetPage, PAGE_RESET_DELAY);
-        }
         for (TileRecord r : mRecords) {
             r.tile.setListening(mListening);
         }
@@ -787,13 +783,6 @@ public class QSDragPanel extends QSPanel implements View.OnDragListener, View.On
     }
 
     @Override
-    protected void onSizeChanged(int w, int h, int oldw, int oldh) {
-        super.onSizeChanged(w, h, oldw, oldh);
-        mTmpLoc = null;
-        mDisplaySize = null;
-    }
-
-    @Override
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
         final int width = MeasureSpec.getSize(widthMeasureSpec);
 
@@ -807,37 +796,18 @@ public class QSDragPanel extends QSPanel implements View.OnDragListener, View.On
         if (mFooter.hasFooter()) {
             h += mFooter.getView().getMeasuredHeight();
         }
+        mGridHeight = h;
+
         mDetail.measure(exactly(width), MeasureSpec.UNSPECIFIED);
+
         if (mDetail.getMeasuredHeight() < h) {
             mDetail.measure(exactly(width), exactly(h));
         }
-
-        // Check if the detail view would be overflowing below the physical height of the device
-        // and cutting the content off. If it is, reduce the detail height to fit.
-        if (isShowingDetail()) {
-            if (mDisplaySize == null) {
-                mDisplaySize = new Point();
-                getDisplay().getSize(mDisplaySize);
-            }
-            if (mTmpLoc == null) {
-                mTmpLoc = new int[2];
-                mDetail.getLocationOnScreen(mTmpLoc);
-            }
-
-            final int containerTop = mTmpLoc[1];
-            final int detailBottom = containerTop + mDetail.getMeasuredHeight();
-            if (detailBottom >= mDisplaySize.y) {
-                // panel is hanging below the screen
-                final int detailMinHeight = mDisplaySize.y - containerTop;
-                mDetail.measure(exactly(width), exactly(detailMinHeight));
-            }
-            setMeasuredDimension(width, mDetail.getMeasuredHeight());
-            mGridHeight = mDetail.getMeasuredHeight();
-        } else {
-            setMeasuredDimension(width, h);
-            mGridHeight = h;
+        if (isShowingDetail() && !isClosingDetail() && mExpanded) {
+            h = mDetail.getMeasuredHeight();
         }
 
+        setMeasuredDimension(width, h);
         for (TileRecord record : mRecords) {
             setupRecord(record);
         }
@@ -867,11 +837,13 @@ public class QSDragPanel extends QSPanel implements View.OnDragListener, View.On
             }
             r.tile.setDetailListening(show);
             int x = (int) ((DragTileRecord) r).destination.x + r.tileView.getWidth() / 2;
-            int y = mViewPager.getTop() + (int) ((DragTileRecord) r).destination.y + r.tileView.getHeight() / 2;
+            int y = mViewPager.getTop()
+                    + (int) ((DragTileRecord) r).destination.y + r.tileView.getHeight() / 2;
             handleShowDetailImpl(r, show, x, y);
         } else {
             super.handleShowDetailTile(r, show);
         }
+        mPageIndicator.setVisibility(!show ? View.VISIBLE : View.INVISIBLE);
     }
 
     @Override
@@ -884,9 +856,6 @@ public class QSDragPanel extends QSPanel implements View.OnDragListener, View.On
         // view pager laid out from top of brightness view to bottom to page through settings
         mViewPager.layout(0, 0, w, viewPagerBottom);
 
-        // layout page indicator inside viewpager inset
-        mPageIndicator.layout(0, b - mPageIndicatorHeight, w, b);
-
         mDetail.layout(0, 0, w, mDetail.getMeasuredHeight());
 
         if (mFooter.hasFooter()) {
@@ -897,7 +866,10 @@ public class QSDragPanel extends QSPanel implements View.OnDragListener, View.On
 
         if (!isShowingDetail() && !isClosingDetail()) {
             mQsPanelTop.bringToFront();
+
         }
+        // layout page indicator inside viewpager inset
+        mPageIndicator.layout(0, b - mPageIndicatorHeight, w, b);
     }
 
     protected int getRowTop(int row) {
@@ -1832,17 +1804,27 @@ public class QSDragPanel extends QSPanel implements View.OnDragListener, View.On
                 }
             });
         }
+        mPanelView.setDetailRequestedScrollLock(mExpanded && show
+                && getResources().getConfiguration().orientation == ORIENTATION_LANDSCAPE);
     }
 
     @Override
     protected void onConfigurationChanged(Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
         FontSizeUtils.updateFontSize(mDetailRemoveButton, R.dimen.qs_detail_button_text_size);
+        mPanelView.setDetailRequestedScrollLock(mExpanded && isShowingDetail()
+                && getResources().getConfiguration().orientation == ORIENTATION_LANDSCAPE);
     }
 
     @Override
     public void setExpanded(boolean expanded) {
         super.setExpanded(expanded);
+        // reset the page when inactive for a while
+        if (expanded) {
+            removeCallbacks(mResetPage);
+        } else {
+            postDelayed(mResetPage, PAGE_RESET_DELAY);
+        }
         if (!expanded) {
             if (mEditing) {
                 mHost.setEditing(false);
@@ -1869,10 +1851,11 @@ public class QSDragPanel extends QSPanel implements View.OnDragListener, View.On
             for (TileRecord r : mRecords) {
                 r.tile.clearState();
             }
+            updateDetailText();
+            mQsPanelTop.updateResources();
             if (mListening) {
                 refreshAllTiles();
             }
-            updateDetailText();
         }
     }
 
@@ -1884,6 +1867,10 @@ public class QSDragPanel extends QSPanel implements View.OnDragListener, View.On
         if (mSettingsObserver != null) {
             mSettingsObserver.unobserve();
         }
+    }
+
+    public void setPanelView(NotificationPanelView panelView) {
+        this.mPanelView = panelView;
     }
 
     public static class TilesListAdapter extends BaseExpandableListAdapter
@@ -1966,6 +1953,7 @@ public class QSDragPanel extends QSPanel implements View.OnDragListener, View.On
                 if (split != null && split.length > 2) {
                     return split[1];
                 }
+                return spec;
             }
             return null;
         }
@@ -1980,15 +1968,15 @@ public class QSDragPanel extends QSPanel implements View.OnDragListener, View.On
                     /** for {@link cyanogenmod.app.StatusBarPanelCustomTile#persistableKey()} **/
                     return split[2];
                 }
+                return spec;
             }
             return null;
         }
 
         private Drawable getQSTileIcon(String spec) {
-            if (QSUtils.isDynamicQsTile(spec)) {
-                return QSTile.ResourceIcon.get(
-                        QSUtils.getDynamicQSTileResIconId(mContext, UserHandle.myUserId(), spec))
-                        .getDrawable(mContext);
+            if (QSUtils.isDynamicQsTile(extractTileTagFromSpec(spec))) {
+                return QSTile.ResourceIcon.get(QSUtils.getDynamicQSTileResIconId(mContext,
+                        UserHandle.myUserId(), extractTileTagFromSpec(spec))).getDrawable(mContext);
             } else if (QSUtils.isStaticQsTile(spec)) {
                 final int res = QSTileHost.getIconResource(spec);
                 if (res != 0) {
